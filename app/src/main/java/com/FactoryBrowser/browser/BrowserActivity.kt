@@ -138,6 +138,12 @@ class BrowserActivity : Activity() {
                 injectBridgeJS()
                 zoomEngine.detectAndApplyZoom()
             }
+
+            // Force ALL links to open inside our WebView — never in external browser
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                view.loadUrl(request.url.toString())
+                return true
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -148,10 +154,28 @@ class BrowserActivity : Activity() {
             override fun onReceivedTitle(view: WebView, title: String) {
                 pageTitleView.text = title.takeIf { it.isNotEmpty() } ?: label
             }
-        }
 
-        webView.loadUrl(url)
-    }
+            // Handle target="_blank" links — open in same WebView instead of new window
+            override fun onCreateWindow(
+                view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?
+            ): Boolean {
+                val newWebView = WebView(view.context)
+                newWebView.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                        // Load the new URL in our main WebView instead
+                        webView.loadUrl(request.url.toString())
+                        return true
+                    }
+                    override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                        webView.loadUrl(url)
+                    }
+                }
+                val transport = resultMsg?.obj as? WebView.WebViewTransport
+                transport?.webView = newWebView
+                resultMsg?.sendToTarget()
+                return true
+            }
+        }
 
     override fun onResume() {
         super.onResume()
@@ -244,6 +268,8 @@ class BrowserActivity : Activity() {
             setSupportZoom(true)
             builtInZoomControls       = true
             displayZoomControls       = false
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
             cacheMode                 = WebSettings.LOAD_DEFAULT
             mixedContentMode          = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString           = "FactoryBrowser/1.0 (Android; ${android.os.Build.MANUFACTURER})"
