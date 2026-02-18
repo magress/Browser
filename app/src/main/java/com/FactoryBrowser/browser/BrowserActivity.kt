@@ -6,13 +6,17 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
-import android.os.Message
 import android.view.KeyEvent
 import android.view.View
-import android.webkit.*
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -33,13 +37,13 @@ class BrowserActivity : Activity() {
     private lateinit var zoomEngine: SmartZoomEngine
     private lateinit var pageTitleView: TextView
     private lateinit var progressBar: ProgressBar
+    private var pageLabel: String = "Browser"
 
     private val scanReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != DW_ACTION_RESULT) return
             val barcode = intent.getStringExtra(DW_EXTRA_DATA) ?: return
             val type    = intent.getStringExtra(DW_EXTRA_TYPE) ?: "UNKNOWN"
-            android.util.Log.d("Scanner", "Scanned: $barcode [$type]")
             injectScanIntoPage(barcode, type)
         }
     }
@@ -49,16 +53,15 @@ class BrowserActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val url   = intent.getStringExtra(EXTRA_URL)   ?: "https://example.com"
-        val label = intent.getStringExtra(EXTRA_LABEL) ?: "Browser"
+        pageLabel = intent.getStringExtra(EXTRA_LABEL) ?: "Browser"
 
-        // ── Root layout ────────────────────────────────────────────
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#0D0D1A"))
         }
         setContentView(root)
 
-        // ── Top bar ────────────────────────────────────────────────
+        // Top bar
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#13132A"))
@@ -68,7 +71,6 @@ class BrowserActivity : Activity() {
             )
         }
 
-        // Back button
         topBar.addView(TextView(this).apply {
             text = "◀  Back"
             textSize = 15f
@@ -85,7 +87,6 @@ class BrowserActivity : Activity() {
             }
         })
 
-        // Divider
         topBar.addView(View(this).apply {
             setBackgroundColor(Color.parseColor("#2A2A4A"))
             layoutParams = LinearLayout.LayoutParams(2,
@@ -93,9 +94,8 @@ class BrowserActivity : Activity() {
                 .also { it.setMargins(0, 20, 16, 20) }
         })
 
-        // Page title
         pageTitleView = TextView(this).apply {
-            text = label
+            text = pageLabel
             textSize = 14f
             setTextColor(Color.parseColor("#AAAACC"))
             maxLines = 1
@@ -107,7 +107,6 @@ class BrowserActivity : Activity() {
         }
         topBar.addView(pageTitleView)
 
-        // Reload button
         topBar.addView(TextView(this).apply {
             text = "↻"
             textSize = 22f
@@ -123,7 +122,6 @@ class BrowserActivity : Activity() {
 
         root.addView(topBar)
 
-        // ── Progress bar ───────────────────────────────────────────
         progressBar = ProgressBar(this, null,
             android.R.attr.progressBarStyleHorizontal).apply {
             progressTintList = android.content.res.ColorStateList
@@ -135,101 +133,103 @@ class BrowserActivity : Activity() {
         }
         root.addView(progressBar)
 
-        // ── WebView ────────────────────────────────────────────────
         webView = WebView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
             )
         }
-        configureWebView()
         root.addView(webView)
 
-        // ── Zoom engine ────────────────────────────────────────────
+        setupWebView()
+        webView.loadUrl(url)
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun setupWebView() {
+        webView.settings.apply {
+            javaScriptEnabled        = true
+            domStorageEnabled         = true
+            databaseEnabled           = true
+            loadWithOverviewMode      = true
+            useWideViewPort           = true
+            setSupportZoom(true)
+            builtInZoomControls       = true
+            displayZoomControls       = false
+            cacheMode                 = WebSettings.LOAD_DEFAULT
+            mixedContentMode          = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            userAgentString           =
+                "FactoryBrowser/1.0 (Android; ${android.os.Build.MANUFACTURER})"
+        }
+
         zoomEngine = SmartZoomEngine(webView)
         AppConfig.zoomRules.forEach { (k, v) -> zoomEngine.setRule(k, v) }
 
-        // ── JS Bridge ─────────────────────────────────────────────
         webView.addJavascriptInterface(
             VelocityJSBridge(this, webView, zoomEngine), "VelocityNative"
         )
 
-        // ── WebViewClient — intercept all links ────────────────────
         webView.webViewClient = object : WebViewClient() {
 
-            override fun onPageStarted(view: WebView, url: String,
-                                       favicon: android.graphics.Bitmap?) {
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 progressBar.visibility = View.VISIBLE
                 progressBar.progress = 10
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 progressBar.visibility = View.GONE
-                pageTitleView.text = view.title?.takeIf { it.isNotEmpty() } ?: label
+                pageTitleView.text = view.title?.takeIf { it.isNotEmpty() } ?: pageLabel
                 injectBridgeJS()
                 zoomEngine.detectAndApplyZoom()
             }
 
-            // Force ALL link clicks to stay inside our WebView
             override fun shouldOverrideUrlLoading(
-                view: WebView, request: WebResourceRequest
+                view: WebView,
+                request: WebResourceRequest
             ): Boolean {
                 view.loadUrl(request.url.toString())
                 return true
             }
         }
 
-        // ── WebChromeClient — handle target="_blank" links ─────────
         webView.webChromeClient = object : WebChromeClient() {
-
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 progressBar.progress = newProgress
                 if (newProgress == 100) progressBar.visibility = View.GONE
             }
-
             override fun onReceivedTitle(view: WebView, title: String) {
-                pageTitleView.text = title.takeIf { it.isNotEmpty() } ?: label
-            }
-
-            // Handle target="_blank" — open in same WebView not external browser
-            override fun onCreateWindow(
-                view: WebView, isDialog: Boolean,
-                isUserGesture: Boolean, resultMsg: Message?
-            ): Boolean {
-                val newWebView = WebView(view.context)
-                newWebView.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(
-                        view: WebView, request: WebResourceRequest
-                    ): Boolean {
-                        webView.loadUrl(request.url.toString())
-                        return true
-                    }
-                    override fun onPageStarted(
-                        view: WebView, url: String, favicon: android.graphics.Bitmap?
-                    ) {
-                        webView.loadUrl(url)
-                    }
-                }
-                val transport = resultMsg?.obj as? WebView.WebViewTransport
-                transport?.webView = newWebView
-                resultMsg?.sendToTarget()
-                return true
+                pageTitleView.text = title.takeIf { it.isNotEmpty() } ?: pageLabel
             }
         }
-
-        webView.loadUrl(url)
     }
-
-    // ── Lifecycle ──────────────────────────────────────────────────
 
     override fun onResume() {
         super.onResume()
-        registerReceiver(scanReceiver, IntentFilter(DW_ACTION_RESULT))
-        sendBroadcast(Intent(DW_API_ACTION).putExtra(DW_SCANNER_CTRL, "ENABLE_PLUGIN"))
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(scanReceiver, IntentFilter(DW_ACTION_RESULT), RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(scanReceiver, IntentFilter(DW_ACTION_RESULT))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("BrowserActivity", "Receiver error: ${e.message}")
+        }
+        // Zebra DataWedge only — safely ignored on non-Zebra devices
+        try {
+            sendBroadcast(Intent(DW_API_ACTION).putExtra(DW_SCANNER_CTRL, "ENABLE_PLUGIN"))
+        } catch (e: Exception) {
+            android.util.Log.d("BrowserActivity", "Not a Zebra device — scanner skipped")
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        sendBroadcast(Intent(DW_API_ACTION).putExtra(DW_SCANNER_CTRL, "DISABLE_PLUGIN"))
+        // Zebra DataWedge only — safely ignored on non-Zebra devices
+        try {
+            sendBroadcast(Intent(DW_API_ACTION).putExtra(DW_SCANNER_CTRL, "DISABLE_PLUGIN"))
+        } catch (e: Exception) {
+            android.util.Log.d("BrowserActivity", "Not a Zebra device — scanner skipped")
+        }
         try { unregisterReceiver(scanReceiver) } catch (e: Exception) { }
     }
 
@@ -240,8 +240,6 @@ class BrowserActivity : Activity() {
         }
         return super.onKeyDown(keyCode, event)
     }
-
-    // ── Scan injection ─────────────────────────────────────────────
 
     private fun injectScanIntoPage(barcode: String, type: String) {
         val safe = barcode
@@ -256,11 +254,15 @@ class BrowserActivity : Activity() {
             var barcodeType = '$type';
 
             var focused = document.activeElement;
-            if (focused && isInputField(focused)) { fillField(focused, barcode); return; }
+            if (focused && isInputField(focused)) {
+                fillField(focused, barcode);
+                return;
+            }
 
             var inputs = document.querySelectorAll(
-                'input[type="text"], input[type="search"], input[type="number"],' +
-                'input[type="tel"], input:not([type]), textarea'
+                'input[type="text"], input[type="search"], ' +
+                'input[type="number"], input[type="tel"], ' +
+                'input:not([type]), textarea'
             );
             for (var i = 0; i < inputs.length; i++) {
                 var inp = inputs[i];
@@ -271,12 +273,20 @@ class BrowserActivity : Activity() {
                 }
             }
 
-            if (window.VelocityBridge) window.VelocityBridge._onScan(barcode, barcodeType);
+            if (window.VelocityBridge) {
+                window.VelocityBridge._onScan(barcode, barcodeType);
+            }
 
             function fillField(el, value) {
-                var setter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 'value');
-                if (setter) setter.set.call(el, value); else el.value = value;
+                try {
+                    var setter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype, 'value');
+                    if (setter && setter.set) {
+                        setter.set.call(el, value);
+                    } else {
+                        el.value = value;
+                    }
+                } catch(e) { el.value = value; }
                 el.dispatchEvent(new Event('input',  { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
                 el.dispatchEvent(new KeyboardEvent('keydown',
@@ -288,50 +298,32 @@ class BrowserActivity : Activity() {
             }
 
             function isInputField(el) {
-                var tag = (el.tagName||'').toLowerCase();
-                var type = (el.type||'').toLowerCase();
+                if (!el || !el.tagName) return false;
+                var tag = el.tagName.toLowerCase();
+                var type = (el.type || '').toLowerCase();
                 if (tag === 'textarea') return true;
                 if (tag === 'input') {
-                    return ['button','submit','reset','checkbox','radio',
-                            'file','hidden','image','range','color']
-                           .indexOf(type) === -1;
+                    var excluded = ['button','submit','reset','checkbox',
+                                   'radio','file','hidden','image','range','color'];
+                    return excluded.indexOf(type) === -1;
                 }
                 return false;
             }
 
             function isVisible(el) {
-                var r = el.getBoundingClientRect();
-                return r.width > 0 && r.height > 0 &&
-                       r.top >= 0 && r.top <= window.innerHeight &&
-                       window.getComputedStyle(el).visibility !== 'hidden' &&
-                       window.getComputedStyle(el).display !== 'none';
+                try {
+                    var r = el.getBoundingClientRect();
+                    var style = window.getComputedStyle(el);
+                    return r.width > 0 && r.height > 0 &&
+                           r.top >= 0 && r.top <= window.innerHeight &&
+                           style.visibility !== 'hidden' &&
+                           style.display !== 'none';
+                } catch(e) { return false; }
             }
         })();
         """.trimIndent()
 
         webView.post { webView.evaluateJavascript(js, null) }
-    }
-
-    // ── WebView setup ──────────────────────────────────────────────
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun configureWebView() {
-        webView.settings.apply {
-            javaScriptEnabled                    = true
-            domStorageEnabled                     = true
-            databaseEnabled                       = true
-            loadWithOverviewMode                  = true
-            useWideViewPort                       = true
-            setSupportZoom(true)
-            builtInZoomControls                   = true
-            displayZoomControls                   = false
-            setSupportMultipleWindows(true)
-            javaScriptCanOpenWindowsAutomatically = true
-            cacheMode                             = WebSettings.LOAD_DEFAULT
-            mixedContentMode                      = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = "FactoryBrowser/1.0 (Android; ${android.os.Build.MANUFACTURER})"
-        }
-        WebView.setWebContentsDebuggingEnabled(true)
     }
 
     private fun injectBridgeJS() {
@@ -341,13 +333,15 @@ class BrowserActivity : Activity() {
           window.__factoryBrowserInjected = true;
           window.VelocityBridge = {
             _listeners: [],
-            _onScan: function(d,t){ this._listeners.forEach(function(fn){ fn(d,t); }); },
-            onScan:      function(cb)    { this._listeners.push(cb); },
-            applyZoom:   function(kw)    { VelocityNative.applyZoom(kw||document.title); },
-            setZoomRule: function(kw,pct){ VelocityNative.setZoomRule(kw,pct); },
-            getZoom:     function()      { return VelocityNative.getZoom(); },
-            triggerScan: function()      { VelocityNative.triggerScan(); },
-            navigate:    function(url)   { VelocityNative.navigate(url); }
+            _onScan: function(d,t) {
+                this._listeners.forEach(function(fn){ fn(d,t); });
+            },
+            onScan:      function(cb)     { this._listeners.push(cb); },
+            applyZoom:   function(kw)     { VelocityNative.applyZoom(kw||document.title); },
+            setZoomRule: function(kw,pct) { VelocityNative.setZoomRule(kw, pct); },
+            getZoom:     function()       { return VelocityNative.getZoom(); },
+            triggerScan: function()       { VelocityNative.triggerScan(); },
+            navigate:    function(url)    { VelocityNative.navigate(url); }
           };
         })();
         """.trimIndent()
