@@ -9,10 +9,10 @@ import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.Message
 import android.view.KeyEvent
 import android.view.View
 import android.webkit.*
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -20,8 +20,8 @@ import android.widget.TextView
 class BrowserActivity : Activity() {
 
     companion object {
-        const val EXTRA_URL   = "extra_url"
-        const val EXTRA_LABEL = "extra_label"
+        const val EXTRA_URL        = "extra_url"
+        const val EXTRA_LABEL      = "extra_label"
         const val DW_ACTION_RESULT = "com.FactoryBrowser.browser.SCAN_RESULT"
         const val DW_EXTRA_DATA    = "com.symbol.datawedge.data_string"
         const val DW_EXTRA_TYPE    = "com.symbol.datawedge.label_type"
@@ -51,20 +51,24 @@ class BrowserActivity : Activity() {
         val url   = intent.getStringExtra(EXTRA_URL)   ?: "https://example.com"
         val label = intent.getStringExtra(EXTRA_LABEL) ?: "Browser"
 
+        // ── Root layout ────────────────────────────────────────────
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#0D0D1A"))
         }
         setContentView(root)
 
-        // Top bar
+        // ── Top bar ────────────────────────────────────────────────
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#13132A"))
             setPadding(8, 0, 16, 0)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 120)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 120
+            )
         }
 
+        // Back button
         topBar.addView(TextView(this).apply {
             text = "◀  Back"
             textSize = 15f
@@ -72,17 +76,24 @@ class BrowserActivity : Activity() {
             setTextColor(Color.parseColor("#7986CB"))
             gravity = android.view.Gravity.CENTER
             setPadding(24, 0, 24, 0)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.MATCH_PARENT)
-            setOnClickListener { if (webView.canGoBack()) webView.goBack() else finish() }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+            setOnClickListener {
+                if (webView.canGoBack()) webView.goBack() else finish()
+            }
         })
 
+        // Divider
         topBar.addView(View(this).apply {
             setBackgroundColor(Color.parseColor("#2A2A4A"))
-            layoutParams = LinearLayout.LayoutParams(2, LinearLayout.LayoutParams.MATCH_PARENT)
+            layoutParams = LinearLayout.LayoutParams(2,
+                LinearLayout.LayoutParams.MATCH_PARENT)
                 .also { it.setMargins(0, 20, 16, 20) }
         })
 
+        // Page title
         pageTitleView = TextView(this).apply {
             text = label
             textSize = 14f
@@ -90,48 +101,67 @@ class BrowserActivity : Activity() {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             gravity = android.view.Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f
+            )
         }
         topBar.addView(pageTitleView)
 
+        // Reload button
         topBar.addView(TextView(this).apply {
             text = "↻"
             textSize = 22f
             setTextColor(Color.parseColor("#555577"))
             gravity = android.view.Gravity.CENTER
             setPadding(24, 0, 8, 0)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.MATCH_PARENT)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
             setOnClickListener { webView.reload() }
         })
 
         root.addView(topBar)
 
-        // Progress bar
-        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            progressTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#7986CB"))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 6)
+        // ── Progress bar ───────────────────────────────────────────
+        progressBar = ProgressBar(this, null,
+            android.R.attr.progressBarStyleHorizontal).apply {
+            progressTintList = android.content.res.ColorStateList
+                .valueOf(Color.parseColor("#7986CB"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 6
+            )
             visibility = View.GONE
         }
         root.addView(progressBar)
 
-        // WebView
+        // ── WebView ────────────────────────────────────────────────
         webView = WebView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            )
         }
         configureWebView()
         root.addView(webView)
 
+        // ── Zoom engine ────────────────────────────────────────────
         zoomEngine = SmartZoomEngine(webView)
         AppConfig.zoomRules.forEach { (k, v) -> zoomEngine.setRule(k, v) }
 
-        webView.addJavascriptInterface(VelocityJSBridge(this, webView, zoomEngine), "VelocityNative")
+        // ── JS Bridge ─────────────────────────────────────────────
+        webView.addJavascriptInterface(
+            VelocityJSBridge(this, webView, zoomEngine), "VelocityNative"
+        )
 
+        // ── WebViewClient — intercept all links ────────────────────
         webView.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+
+            override fun onPageStarted(view: WebView, url: String,
+                                       favicon: android.graphics.Bitmap?) {
                 progressBar.visibility = View.VISIBLE
                 progressBar.progress = 10
             }
+
             override fun onPageFinished(view: WebView, url: String) {
                 progressBar.visibility = View.GONE
                 pageTitleView.text = view.title?.takeIf { it.isNotEmpty() } ?: label
@@ -139,34 +169,43 @@ class BrowserActivity : Activity() {
                 zoomEngine.detectAndApplyZoom()
             }
 
-            // Force ALL links to open inside our WebView — never in external browser
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            // Force ALL link clicks to stay inside our WebView
+            override fun shouldOverrideUrlLoading(
+                view: WebView, request: WebResourceRequest
+            ): Boolean {
                 view.loadUrl(request.url.toString())
                 return true
             }
         }
 
+        // ── WebChromeClient — handle target="_blank" links ─────────
         webView.webChromeClient = object : WebChromeClient() {
+
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 progressBar.progress = newProgress
                 if (newProgress == 100) progressBar.visibility = View.GONE
             }
+
             override fun onReceivedTitle(view: WebView, title: String) {
                 pageTitleView.text = title.takeIf { it.isNotEmpty() } ?: label
             }
 
-            // Handle target="_blank" links — open in same WebView instead of new window
+            // Handle target="_blank" — open in same WebView not external browser
             override fun onCreateWindow(
-                view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?
+                view: WebView, isDialog: Boolean,
+                isUserGesture: Boolean, resultMsg: Message?
             ): Boolean {
                 val newWebView = WebView(view.context)
                 newWebView.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                        // Load the new URL in our main WebView instead
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView, request: WebResourceRequest
+                    ): Boolean {
                         webView.loadUrl(request.url.toString())
                         return true
                     }
-                    override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    override fun onPageStarted(
+                        view: WebView, url: String, favicon: android.graphics.Bitmap?
+                    ) {
                         webView.loadUrl(url)
                     }
                 }
@@ -176,6 +215,11 @@ class BrowserActivity : Activity() {
                 return true
             }
         }
+
+        webView.loadUrl(url)
+    }
+
+    // ── Lifecycle ──────────────────────────────────────────────────
 
     override fun onResume() {
         super.onResume()
@@ -197,9 +241,14 @@ class BrowserActivity : Activity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    // ── Scan injection ─────────────────────────────────────────────
+
     private fun injectScanIntoPage(barcode: String, type: String) {
-        val safe = barcode.replace("\\", "\\\\").replace("'", "\\'")
-            .replace("\n", "").replace("\r", "")
+        val safe = barcode
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "")
+            .replace("\r", "")
 
         val js = """
         (function() {
@@ -214,10 +263,10 @@ class BrowserActivity : Activity() {
                 'input[type="tel"], input:not([type]), textarea'
             );
             for (var i = 0; i < inputs.length; i++) {
-                var input = inputs[i];
-                if (isVisible(input) && !input.disabled && !input.readOnly) {
-                    input.focus();
-                    fillField(input, barcode);
+                var inp = inputs[i];
+                if (isVisible(inp) && !inp.disabled && !inp.readOnly) {
+                    inp.focus();
+                    fillField(inp, barcode);
                     return;
                 }
             }
@@ -225,13 +274,17 @@ class BrowserActivity : Activity() {
             if (window.VelocityBridge) window.VelocityBridge._onScan(barcode, barcodeType);
 
             function fillField(el, value) {
-                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+                var setter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value');
                 if (setter) setter.set.call(el, value); else el.value = value;
                 el.dispatchEvent(new Event('input',  { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
-                el.dispatchEvent(new KeyboardEvent('keydown',  { key: 'Enter', keyCode: 13, bubbles: true }));
-                el.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', keyCode: 13, bubbles: true }));
-                el.dispatchEvent(new KeyboardEvent('keyup',    { key: 'Enter', keyCode: 13, bubbles: true }));
+                el.dispatchEvent(new KeyboardEvent('keydown',
+                    { key: 'Enter', keyCode: 13, bubbles: true }));
+                el.dispatchEvent(new KeyboardEvent('keypress',
+                    { key: 'Enter', keyCode: 13, bubbles: true }));
+                el.dispatchEvent(new KeyboardEvent('keyup',
+                    { key: 'Enter', keyCode: 13, bubbles: true }));
             }
 
             function isInputField(el) {
@@ -240,14 +293,16 @@ class BrowserActivity : Activity() {
                 if (tag === 'textarea') return true;
                 if (tag === 'input') {
                     return ['button','submit','reset','checkbox','radio',
-                            'file','hidden','image','range','color'].indexOf(type) === -1;
+                            'file','hidden','image','range','color']
+                           .indexOf(type) === -1;
                 }
                 return false;
             }
 
             function isVisible(el) {
                 var r = el.getBoundingClientRect();
-                return r.width > 0 && r.height > 0 && r.top >= 0 && r.top <= window.innerHeight &&
+                return r.width > 0 && r.height > 0 &&
+                       r.top >= 0 && r.top <= window.innerHeight &&
                        window.getComputedStyle(el).visibility !== 'hidden' &&
                        window.getComputedStyle(el).display !== 'none';
             }
@@ -257,22 +312,24 @@ class BrowserActivity : Activity() {
         webView.post { webView.evaluateJavascript(js, null) }
     }
 
+    // ── WebView setup ──────────────────────────────────────────────
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView() {
         webView.settings.apply {
-            javaScriptEnabled        = true
-            domStorageEnabled         = true
-            databaseEnabled           = true
-            loadWithOverviewMode      = true
-            useWideViewPort           = true
+            javaScriptEnabled                    = true
+            domStorageEnabled                     = true
+            databaseEnabled                       = true
+            loadWithOverviewMode                  = true
+            useWideViewPort                       = true
             setSupportZoom(true)
-            builtInZoomControls       = true
-            displayZoomControls       = false
+            builtInZoomControls                   = true
+            displayZoomControls                   = false
             setSupportMultipleWindows(true)
             javaScriptCanOpenWindowsAutomatically = true
-            cacheMode                 = WebSettings.LOAD_DEFAULT
-            mixedContentMode          = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString           = "FactoryBrowser/1.0 (Android; ${android.os.Build.MANUFACTURER})"
+            cacheMode                             = WebSettings.LOAD_DEFAULT
+            mixedContentMode                      = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            userAgentString = "FactoryBrowser/1.0 (Android; ${android.os.Build.MANUFACTURER})"
         }
         WebView.setWebContentsDebuggingEnabled(true)
     }
