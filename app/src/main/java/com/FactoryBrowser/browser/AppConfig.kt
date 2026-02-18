@@ -87,7 +87,7 @@ object AppConfig {
             }
             _zoomRules = zoom
             _isConfigLoaded = true
-            Log.i(TAG, "Loaded ${_urls.size} URLs from $source")
+            Log.i(TAG, "Loaded ${_urls.size} URLs from $_configSource")
 
         } catch (e: Exception) {
             Log.e(TAG, "Parse error: ${e.message}")
