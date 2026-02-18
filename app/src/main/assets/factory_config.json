@@ -1,0 +1,27 @@
+{
+  "urls": [
+    {
+      "label": "WP1",
+      "url":   "http://wp1.sap.sca.se:8042/zwm?",
+      "icon":  "📦"
+    },
+    {
+      "label": "SAP S1",
+      "url":   "https://www.google.com",
+      "icon":  "🏭"
+    }
+  ],
+  "zoomRules": {
+    "login":      70,
+    "dashboard":  85,
+    "menu":       80,
+    "picking":    90,
+    "receiving":  90,
+    "inventory":  90,
+    "list":       90,
+    "detail":     95,
+    "form":       85,
+    "confirm":    80,
+    "error":      75
+  }
+}
